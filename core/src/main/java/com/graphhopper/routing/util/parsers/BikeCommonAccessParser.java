@@ -42,29 +42,7 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
     public WayAccess getAccess(ReaderWay way) {
         String highwayValue = way.getTag("highway");
         if (highwayValue == null) {
-            WayAccess access = WayAccess.CAN_SKIP;
-
-            if (FerrySpeedCalculator.isFerry(way)) {
-                // if bike is NOT explicitly tagged allow bike but only if foot is not specified either
-                String bikeTag = way.getTag("bicycle");
-                if (bikeTag == null && !way.hasTag("foot") || intendedValues.contains(bikeTag))
-                    access = WayAccess.FERRY;
-            }
-
-            // special case not for all acceptedRailways, only platform
-            if (way.hasTag("railway", "platform"))
-                access = WayAccess.WAY;
-
-            if (way.hasTag("man_made", "pier"))
-                access = WayAccess.WAY;
-
-            if (!access.canSkip()) {
-                if (way.hasTag(restrictionKeys, restrictedValues))
-                    return WayAccess.CAN_SKIP;
-                return access;
-            }
-
-            return WayAccess.CAN_SKIP;
+            return checkNonHighwayAccess(way);
         }
 
         if (!allowedHighways.contains(highwayValue))
@@ -98,6 +76,33 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
 
         return WayAccess.WAY;
     }
+
+    private WayAccess checkNonHighwayAccess(ReaderWay way) {
+        WayAccess access = WayAccess.CAN_SKIP;
+
+        if (FerrySpeedCalculator.isFerry(way)) {
+            // if bike is NOT explicitly tagged allow bike but only if foot is not specified either
+            String bikeTag = way.getTag("bicycle");
+            if (bikeTag == null && !way.hasTag("foot") || intendedValues.contains(bikeTag))
+                access = WayAccess.FERRY;
+        }
+
+        // special case not for all acceptedRailways, only platform
+        if (way.hasTag("railway", "platform"))
+            access = WayAccess.WAY;
+
+        if (way.hasTag("man_made", "pier"))
+            access = WayAccess.WAY;
+
+        if (!access.canSkip()) {
+            if (way.hasTag(restrictionKeys, restrictedValues))
+                return WayAccess.CAN_SKIP;
+            return access;
+        }
+
+        return WayAccess.CAN_SKIP;
+    }
+
 
     @Override
     public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way) {
