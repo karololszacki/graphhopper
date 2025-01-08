@@ -107,7 +107,7 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
             // `;` can be an access delimiter; https://github.com/graphhopper/graphhopper/pull/2676
             String[] split = value.split(";");
             for (String val : split) {
-                if (restrictedValues.contains(val)) {
+                if (restrictedValues.contains(val) && !hasTemporalRestriction(way, restrictionKeys.indexOf(key), restrictionKeys)) {
                     return WayAccess.CAN_SKIP; // explicit ban!
                 }
                 if (intendedValues.contains(val)) {
