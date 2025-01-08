@@ -5,6 +5,7 @@ import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.util.FerrySpeedCalculator;
 import com.graphhopper.routing.util.WayAccess;
+import com.graphhopper.routing.util.TransportationMode;
 
 import java.util.*;
 
@@ -16,14 +17,8 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
     private final Set<String> allowedHighways = new HashSet<>();
     private final BooleanEncodedValue roundaboutEnc;
 
-    /**
-     * The access restriction list returned from OSMRoadAccessParser.toOSMRestrictions(TransportationMode.Bike)
-     * contains "vehicle". But here we want to allow walking via dismount.
-     */
-    private static final List<String> RESTRICTIONS = Arrays.asList("bicycle", "access");
-
     protected BikeCommonAccessParser(BooleanEncodedValue accessEnc, BooleanEncodedValue roundaboutEnc) {
-        super(accessEnc, RESTRICTIONS);
+        super(accessEnc, OSMRoadAccessParser.toOSMRestrictions(TransportationMode.BIKE));
 
         this.roundaboutEnc = roundaboutEnc;
 
@@ -48,31 +43,30 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
         if (!allowedHighways.contains(highwayValue))
             return WayAccess.CAN_SKIP;
 
-        // use the way for pushing
-        if (way.hasTag("bicycle", "dismount"))
+        String bicycleValue = way.getTag("bicycle");
+        boolean hasAllowedBikesExplicitly = intendedValues.contains(bicycleValue);
+
+        // use the way if it is tagged for bikes, even if for dismount (speed-wise: PUSHING_SECTION_SPEED)
+        if ("dismount".equals(bicycleValue))
             return WayAccess.WAY;
 
-        int firstIndex = way.getFirstIndex(restrictionKeys);
-        if (firstIndex >= 0) {
-            String firstValue = way.getTag(restrictionKeys.get(firstIndex), "");
-            String[] restrict = firstValue.split(";");
-            for (String value : restrict) {
-                if (restrictedValues.contains(value) && !hasTemporalRestriction(way, firstIndex, restrictionKeys))
-                    return WayAccess.CAN_SKIP;
-                if (intendedValues.contains(value))
-                    return WayAccess.WAY;
-            }
+        // check tricky ways, that DO NOT have explicit tags like bicycle=yes
+        if (!hasAllowedBikesExplicitly) {
+            if ("motorway".equals(highwayValue) || "motorway_link".equals(highwayValue))
+                return WayAccess.CAN_SKIP;
+
+            if (way.hasTag("motorroad", "yes"))
+                return WayAccess.CAN_SKIP;
+
+            if (isBlockFords() && ("ford".equals(highwayValue) || way.hasTag("ford")))
+                return WayAccess.CAN_SKIP;
         }
 
-        // accept only if explicitly tagged for bike usage
-        if ("motorway".equals(highwayValue) || "motorway_link".equals(highwayValue))
-            return WayAccess.CAN_SKIP;
-
-        if (way.hasTag("motorroad", "yes"))
-            return WayAccess.CAN_SKIP;
-
-        if (isBlockFords() && ("ford".equals(highwayValue) || way.hasTag("ford")))
-            return WayAccess.CAN_SKIP;
+        // check explicit access restrictions
+        WayAccess explicitRestriction = checkExplicitRestrictionsHierarchy(way);
+        if (explicitRestriction != WayAccess.OTHER) {
+            return explicitRestriction;
+        }
 
         return WayAccess.WAY;
     }
