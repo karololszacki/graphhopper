@@ -78,6 +78,13 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
     }
 
     private WayAccess checkNonHighwayAccess(ReaderWay way) {
+        // special case not for all acceptedRailways, only platform
+        if (way.hasTag("railway", "platform"))
+            return WayAccess.WAY;
+
+        if (way.hasTag("man_made", "pier"))
+            return WayAccess.WAY;
+
         WayAccess access = WayAccess.CAN_SKIP;
 
         if (FerrySpeedCalculator.isFerry(way)) {
@@ -86,13 +93,6 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
             if (bikeTag == null && !way.hasTag("foot") || intendedValues.contains(bikeTag))
                 access = WayAccess.FERRY;
         }
-
-        // special case not for all acceptedRailways, only platform
-        if (way.hasTag("railway", "platform"))
-            access = WayAccess.WAY;
-
-        if (way.hasTag("man_made", "pier"))
-            access = WayAccess.WAY;
 
         if (!access.canSkip()) {
             if (way.hasTag(restrictionKeys, restrictedValues))
