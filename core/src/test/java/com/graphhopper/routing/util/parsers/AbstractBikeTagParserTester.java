@@ -219,7 +219,7 @@ public abstract class AbstractBikeTagParserTester {
         way.setTag("foot", "yes"); // should not change anything
         assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
         way.setTag("bicycle", "yes");
-        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way)); // remark: this fails on master
         way.setTag("speed_pedelec", "no");
         assertEquals(WayAccess.WAY, accessParser.getAccess(way)); // still access for regular bikes
 
@@ -231,10 +231,114 @@ public abstract class AbstractBikeTagParserTester {
         way.setTag("access", "restricted");  // should not change anything, as vehicle is still ="no"
         assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
         way.setTag("vehicle", "permissive"); // changed to permissive should allow using this way
-        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way)); // remark: this fails on master
         way.setTag("vehicle", ""); // removed vehicle so back to access=restricted having only meaning
         assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
         way.setTag("access", "permissive"); // changed to permissive should allow using this way
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+    }
+
+    @Test
+    public void testExampleFerries() {
+        int edgeId = 0;
+        EdgeIntAccess intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        IntsRef relFlags = osmParsers.createRelationFlags();
+        ReaderWay way = new ReaderWay(1);
+
+        // https://www.openstreetmap.org/way/40196642
+        way.setTag("route", "ferry");
+        way.setTag("bicycle", "yes");
+        way.setTag("fee", "yes");
+        way.setTag("foot", "yes");
+        way.setTag("horse", "no");
+        way.setTag("motor_vehicle", "no");
+        way.setTag("vehicle", "no");
+        way.setTag("edge_distance", 10.0); // artificial tag, usually made in OSMReader::addEdge
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
+        assertEquals(2, ferrySpeedEnc.getDecimal(false, edgeId, intAccess)); // ferry speed
+        assertSpeed(edgeId, intAccess, 2, 2);
+
+        // https://www.openstreetmap.org/way/5172541
+        intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        way.clearTags();
+        way.setTag("route", "ferry");
+        way.setTag("bicycle", "yes");
+        way.setTag("duration", "5"); // 5 minutes
+        way.setTag("motor_vehicle", "yes");
+        way.setTag("motorcar", "yes");
+        way.setTag("motorcycle", "yes");
+        way.setTag("toll", "yes");
+        way.setTag("edge_distance", 300.0); // 300m; artificial tag, usually made in OSMReader::addEdge
+        way.setTag("speed_from_duration", (300.0 / (5*60)) * 60 * 60 / 1000); // 3.6km/h (300m in 300s, 1m/s)
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
+        assertEquals(4, ferrySpeedEnc.getDecimal(false, edgeId, intAccess));
+        assertSpeed(edgeId, intAccess, 4, 4);
+
+        // https://www.openstreetmap.org/way/69055275
+        intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        way.clearTags();
+        way.setTag("route", "ferry");
+        way.setTag("access", "yes");
+        way.setTag("duration", "08:30");
+        way.setTag("ferry", "secondary");
+        way.setTag("motor_vehicle", "yes");
+        way.setTag("motorcar", "yes");
+        way.setTag("motorcycle", "yes");
+        way.setTag("vehicle", "yes");
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+
+        // https://www.openstreetmap.org/way/1248730808
+        intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        way.clearTags();
+        way.setTag("route", "ferry");
+        way.setTag("access", "customers");
+        way.setTag("duration", "07:00");
+        way.setTag("fee", "yes");
+        way.setTag("foot", "yes");
+        way.setTag("vehicle", "yes");
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+    }
+
+    @Test
+    public void testExampleHighways() {
+        ReaderWay way = new ReaderWay(1);
+
+        // https://www.openstreetmap.org/way/452034827
+        way.setTag("highway", "service");
+        way.setTag("access", "destination");
+        way.setTag("fee", "yes");
+        way.setTag("foot", "yes");
+        way.setTag("horse", "no");
+        way.setTag("motor_vehicle", "no");
+        way.setTag("vehicle", "destination");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+
+        // https://www.openstreetmap.org/way/515040796
+        way.setTag("highway", "residential");
+        way.setTag("access", "private");
+        way.setTag("vehicle", "yes");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+
+        // https://www.openstreetmap.org/way/588835615
+        way.setTag("highway", "service");
+        way.setTag("access", "private");
+        way.setTag("oneway", "no");
+        way.setTag("maxspeed", "10");
+        way.setTag("vehicle", "permissive");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+
+        // https://www.openstreetmap.org/way/1086670843
+        way.setTag("highway", "track");
+        way.setTag("access", "permit");
+        way.setTag("horse", "yes");
+        way.setTag("motor_vehicle", "yes");
+        way.setTag("motorcar", "yes");
+        way.setTag("motorcycle", "yes");
+        way.setTag("vehicle", "yes");
+        way.setTag("smoothness", "good");
+        way.setTag("surface", "asphalt");
         assertEquals(WayAccess.WAY, accessParser.getAccess(way));
     }
 
