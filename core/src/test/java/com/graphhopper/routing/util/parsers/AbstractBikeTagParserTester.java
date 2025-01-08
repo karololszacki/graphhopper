@@ -21,9 +21,7 @@ import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderRelation;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.*;
-import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.routing.util.OSMParsers;
-import com.graphhopper.routing.util.PriorityCode;
+import com.graphhopper.routing.util.*;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.PMap;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +43,7 @@ public abstract class AbstractBikeTagParserTester {
     protected DecimalEncodedValue priorityEnc;
     protected DecimalEncodedValue avgSpeedEnc;
     protected BooleanEncodedValue accessEnc;
+    protected DecimalEncodedValue ferrySpeedEnc;
 
     @BeforeEach
     public void setUp() {
@@ -52,10 +51,12 @@ public abstract class AbstractBikeTagParserTester {
         accessParser = createAccessParser(encodingManager, new PMap("block_fords=true"));
         speedParser = createAverageSpeedParser(encodingManager);
         priorityParser = createPriorityParser(encodingManager);
+        ferrySpeedEnc = encodingManager.getDecimalEncodedValue(FerrySpeed.KEY);
         osmParsers = new OSMParsers()
                 .addRelationTagParser(relConfig -> new OSMBikeNetworkTagParser(encodingManager.getEnumEncodedValue(BikeNetwork.KEY, RouteNetwork.class), relConfig))
                 .addRelationTagParser(relConfig -> new OSMMtbNetworkTagParser(encodingManager.getEnumEncodedValue(MtbNetwork.KEY, RouteNetwork.class), relConfig))
                 .addWayTagParser(new OSMSmoothnessParser(encodingManager.getEnumEncodedValue(Smoothness.KEY, Smoothness.class)))
+                .addWayTagParser(new FerrySpeedCalculator(ferrySpeedEnc))
                 .addWayTagParser(accessParser).addWayTagParser(speedParser).addWayTagParser(priorityParser);
         priorityEnc = priorityParser.getPriorityEnc();
         avgSpeedEnc = speedParser.getAverageSpeedEnc();
@@ -88,8 +89,14 @@ public abstract class AbstractBikeTagParserTester {
         int edgeId = 0;
         osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
         assertEquals(PriorityCode.getValue(expectedPrio.getValue()), priorityEnc.getDecimal(false, edgeId, intAccess), 0.01);
-        assertEquals(expectedSpeed, avgSpeedEnc.getDecimal(false, edgeId, intAccess), 0.1);
-        assertEquals(expectedSpeed, avgSpeedEnc.getDecimal(true, edgeId, intAccess), 0.1);
+        assertSpeed(edgeId, intAccess, expectedSpeed, expectedSpeed);
+    }
+
+    private void assertSpeed(int edgeId, EdgeIntAccess edgeIntAccess, double expSpeedFwd, double expSpeedBwd) {
+        double speedFwd = avgSpeedEnc.getDecimal(false, edgeId, edgeIntAccess);
+        double speedBwd = avgSpeedEnc.getDecimal(true, edgeId, edgeIntAccess);
+        assertEquals(expSpeedFwd, speedFwd, 0.1);
+        assertEquals(expSpeedBwd, speedBwd, 0.1);
     }
 
     protected double getSpeedFromFlags(ReaderWay way) {
@@ -98,6 +105,137 @@ public abstract class AbstractBikeTagParserTester {
         int edgeId = 0;
         osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
         return avgSpeedEnc.getDecimal(false, edgeId, intAccess);
+    }
+
+    @Test // Adapted from CarTagParserTest::testFerry, with motorcar and bicycle values swapped when given
+    public void testFerry() {
+        IntsRef relFlags = osmParsers.createRelationFlags();
+        ArrayEdgeIntAccess intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        int edgeId = 0;
+
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("route", "shuttle_train");
+        way.setTag("bicycle", "yes");
+        way.setTag("motorcar", "no");
+        // Provide the duration value in seconds:
+        way.setTag("way_distance", 50000.0);
+        way.setTag("speed_from_duration", 50 / (35.0 / 60));
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
+        assertEquals(62, ferrySpeedEnc.getDecimal(false, edgeId, intAccess));
+        assertSpeed(edgeId, intAccess, 30, 30);
+
+        // test for very short and slow 0.5km/h still realistic ferry
+        intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        way = new ReaderWay(1);
+        way.setTag("route", "ferry");
+        way.setTag("bicycle", "yes");
+        way.setTag("way_distance", 100.0);
+        way.setTag("speed_from_duration", 0.1 / (12.0 / 60));
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
+        assertEquals(2, ferrySpeedEnc.getDecimal(false, edgeId, intAccess));
+        assertSpeed(edgeId, intAccess, 2, 2);
+
+        // test for missing duration
+        intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        way = new ReaderWay(1);
+        way.setTag("route", "ferry");
+        way.setTag("bicycle", "yes");
+        way.setTag("edge_distance", 1000.0);
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
+        assertEquals(6, ferrySpeedEnc.getDecimal(false, edgeId, intAccess));
+        assertSpeed(edgeId, intAccess, 6, 6);
+
+        // test some bike-achievable speed
+        intAccess = ArrayEdgeIntAccess.createFromBytes(encodingManager.getBytesForFlags());
+        way = new ReaderWay(1);
+        way.setTag("route", "ferry");
+        way.setTag("edge_distance", 15000.0);
+        way.setTag("speed_from_duration", 15 / 0.5);
+        osmParsers.handleWayTags(edgeId, intAccess, way, relFlags);
+        assertEquals(22, ferrySpeedEnc.getDecimal(false, edgeId, intAccess));
+        assertSpeed(edgeId, intAccess, 22, 22);
+
+        way.clearTags();
+        way.setTag("route", "ferry");
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        way.setTag("bicycle", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+
+        way.clearTags();
+        way.setTag("route", "ferry");
+        way.setTag("foot", "yes");
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+
+        way.clearTags();
+        way.setTag("route", "ferry");
+        way.setTag("foot", "designated");
+        way.setTag("motor_vehicle", "designated");
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+    }
+
+    @Test
+    public void testHighwayAccessHierarchy() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("highway", "tertiary");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+        way.setTag("access", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("vehicle", "yes");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+        way.setTag("vehicle", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("bicycle", "yes");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+        way.setTag("bicycle", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+    }
+
+    @Test
+    public void testFerryAccessHierarchy() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("route", "ferry");
+        way.setTag("access", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("vehicle", "yes");
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        way.setTag("vehicle", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("bicycle", "yes");
+        assertEquals(WayAccess.FERRY, accessParser.getAccess(way));
+        way.setTag("bicycle", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+    }
+
+    @Test
+    public void testAccessHierarchy() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("access", "restricted");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("vehicle", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("foot", "yes"); // should not change anything
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("bicycle", "yes");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+        way.setTag("speed_pedelec", "no");
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way)); // still access for regular bikes
+
+        way.clearTags();
+        way.setTag("vehicle", "no");
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("foot", "yes"); // should not change anything
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("access", "restricted");  // should not change anything, as vehicle is still ="no"
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("vehicle", "permissive"); // changed to permissive should allow using this way
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
+        way.setTag("vehicle", ""); // removed vehicle so back to access=restricted having only meaning
+        assertEquals(WayAccess.CAN_SKIP, accessParser.getAccess(way));
+        way.setTag("access", "permissive"); // changed to permissive should allow using this way
+        assertEquals(WayAccess.WAY, accessParser.getAccess(way));
     }
 
     @Test
