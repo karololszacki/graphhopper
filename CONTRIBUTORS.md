@@ -48,6 +48,7 @@ Here is an overview:
  * jessLryan, max elevation can now be negative
  * joe-akeem, improvements like #2158
  * JohannesPelzer, improved GPX information and various other things
+ * karololszacki, way access hierarchy for bicycles (esp. ferries)
  * karussell, one of the core developers
  * khuebner, initial turn costs support
  * kodonnell, adding support for CH and other algorithms (#60) and penalizing inner-link U-turns (#88)
