@@ -446,7 +446,7 @@ public class BikeTagParserTest extends AbstractBikeTagParserTester {
         ReaderWay way = new ReaderWay(1);
         way.setTag("highway", "cycleway");
         way.setTag("vehicle", "no");
-        assertTrue(accessParser.getAccess(way).isWay());
+        assertTrue(accessParser.getAccess(way).canSkip());
 
         // Senseless tagging: JOSM does create a warning here:
         way.setTag("bicycle", "no");
@@ -481,12 +481,13 @@ public class BikeTagParserTest extends AbstractBikeTagParserTester {
         way.setTag("bicycle", "yes");
         assertTrue(accessParser.getAccess(way).isWay());
 
+        // forestry is supposed to be skipped; originates in https://github.com/graphhopper/graphhopper/pull/2676
         way.clearTags();
         way.setTag("highway", "track");
         way.setTag("vehicle", "forestry");
-        assertTrue(accessParser.getAccess(way).isWay());
+        assertTrue(accessParser.getAccess(way).canSkip());
         way.setTag("vehicle", "agricultural;forestry");
-        assertTrue(accessParser.getAccess(way).isWay());
+        assertTrue(accessParser.getAccess(way).canSkip());
     }
 
     @Test
