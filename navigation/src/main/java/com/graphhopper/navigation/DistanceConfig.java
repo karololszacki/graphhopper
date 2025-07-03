@@ -65,7 +65,7 @@ public class DistanceConfig {
                 );
             } else {
                 voiceInstructions = Arrays.asList(
-                        new InitialVoiceInstructionConfig(FOR_HIGHER_DISTANCE_PLURAL.metric, translationMap, locale, 4250, 250, unit),
+                        new InitialVoiceInstructionConfig(FOR_HIGHER_DISTANCE_PLURAL.imperial, translationMap, locale, 4250, 250, unit),
                         new FixedDistanceVoiceInstructionConfig(IN_HIGHER_DISTANCE_PLURAL.imperial, translationMap, locale, 3220, 2),
                         new FixedDistanceVoiceInstructionConfig(IN_HIGHER_DISTANCE_SINGULAR.imperial, translationMap, locale, 1610, 1),
                         new ConditionalDistanceVoiceInstructionConfig(IN_LOWER_DISTANCE_PLURAL.imperial, translationMap, locale, new int[]{400, 200}, new int[]{1300, 600})
